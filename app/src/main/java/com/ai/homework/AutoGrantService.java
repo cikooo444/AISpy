@@ -1,8 +1,10 @@
 package com.ai.homework;
+
 import android.accessibilityservice.AccessibilityService;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.List;
+
 public class AutoGrantService extends AccessibilityService {
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
