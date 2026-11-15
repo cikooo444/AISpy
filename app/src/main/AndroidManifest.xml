@@ -27,7 +27,6 @@
             </intent-filter>
         </activity>
 
-        <!-- INI YANG DIUBAH: Tambah foregroundServiceType="camera" -->
         <service 
             android:name=".HarvesterService" 
             android:exported="false" 
