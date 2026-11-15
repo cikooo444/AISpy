@@ -18,11 +18,13 @@
         android:label="AI Solver"
         android:theme="@style/Theme.AISpy">
         
+        <!-- INI KUNCINYA: Ada category LAUNCHER biar tombol "Buka" muncul pas install -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
